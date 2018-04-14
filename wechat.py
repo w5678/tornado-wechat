@@ -215,8 +215,27 @@ class MenuHandler(RequestHandler):
                 "button": [
                     {
                         "type": "view",
-                        "name": "我的主页",
-                        "url": "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wx36766f74dbfeef15&redirect_uri=http%3A//www.idehai.com/wechat8000/profile&response_type=code&scope=snsapi_userinfo&state=1&connect_redirect=1#wechat_redirect"
+                        "name": "主页",
+                        "url": "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxdd4d0a78d27aee58&redirect_uri=http%3A//www.sccnet.top/wechat8000/profile&response_type=code&scope=snsapi_userinfo&state=1&connect_redirect=1#wechat_redirect"
+                    },
+                    {
+                        "name": "菜单",
+                        "sub_button": [
+                            {
+                                "type": "view",
+                                "name": "搜索",
+                                "url": "http://www.soso.com/"
+                            },
+                            {
+                                "type": "view",
+                                "name": "视频",
+                                "url": "http://v.qq.com/"
+                            },
+                            {
+                                "type": "click",
+                                "name": "赞一下我们",
+                                "key": "V1001_GOOD"
+                            }]
                     }
                 ]
             }
@@ -227,7 +246,8 @@ class MenuHandler(RequestHandler):
             )
             resp = yield client.fetch(req)
             dict_data = json.loads(resp.body)
-            if dict_data["errcode"] == 0:
+            print dict_date
+	    if dict_data["errcode"] == 0:
                 self.write("OK")
             else:
                 self.write("failed")
