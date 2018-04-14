@@ -16,7 +16,7 @@ from tornado.options import options, define
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 
-WECHAT_TOKEN = "itcast"
+WECHAT_TOKEN = "wang"
 WECHAT_APP_ID = "wxdd4d0a78d27aee58"
 WECHAT_APP_SECRET = "1e00f6ec7a728c975c15a831e72a7e3e"
 
@@ -36,13 +36,13 @@ class AccessToken(object):
         "grant_type=client_credential&appid=%s&secret=%s" % (WECHAT_APP_ID, WECHAT_APP_SECRET)
         resp = yield client.fetch(url)
         dict_data = json.loads(resp.body)
+
         if "errcode" in dict_data:
             raise Exception("wechat server error")
         else:
             cls._access_token = dict_data["access_token"]
             cls._expires_in = dict_data["expires_in"]
             cls._create_time = time.time()
-
 
     @classmethod
     @tornado.gen.coroutine
@@ -73,6 +73,37 @@ class WechatHandler(RequestHandler):
         echostr = self.get_argument("echostr")
         self.write(echostr)
 
+# http://api.weixin.qq.com/cgi-bin/media/voice/translatecontent?access_token=ACCESS_TOKEN&lfrom=xxx&lto=xxx
+    @tornado.gen.coroutine
+    def get_translate_en(self,str):
+        trans_ret=None
+        try:
+            access_token = yield AccessToken.get_access_token()
+        except Exception as e:
+            self.write("errmsg: %s" % e)
+        else:
+            client = AsyncHTTPClient()
+            url = "http://api.weixin.qq.com/cgi-bin/media/voice/translatecontent?" \
+                  "access_token=%s&lfrom=zh_CN&lto=en_US" % (access_token)
+
+            req = HTTPRequest(
+                url=url,
+                method="POST",
+                body=str  # json.dumps(str, ensure_ascii=False)
+            )
+            resp = yield client.fetch(req)
+            ret_data = json.loads(resp.body)
+            #print"translate:", ret_data
+            if ret_data["to_content"] != "":
+                #self.write("OK")
+                trans_ret = ret_data["to_content"]
+            else:
+                pass
+                #self.write("failed")
+            raise tornado.gen.Return(trans_ret)
+            #return trans_ret
+
+    @tornado.gen.coroutine
     def post(self):
         xml_data = self.request.body
         dict_data = xmltodict.parse(xml_data)
@@ -88,6 +119,12 @@ class WechatHandler(RequestHandler):
 <Content><![CDATA[你好]]></Content>
 </xml>
 """
+            trans_data=yield self.get_translate_en(content)
+            print("text psot translate:",trans_data)
+            if trans_data!="":
+                content=trans_data
+            else:
+                pass
             resp_data = {
                 "xml":{
                     "ToUserName": dict_data["xml"]["FromUserName"],
@@ -98,6 +135,33 @@ class WechatHandler(RequestHandler):
                 }
             }
             self.write(xmltodict.unparse(resp_data))
+        elif msg_type == "voice":
+
+                content = dict_data["xml"]["Recognition"]
+                """
+                <xml>
+    <ToUserName><![CDATA[toUser]]></ToUserName>
+    <FromUserName><![CDATA[fromUser]]></FromUserName>
+    <CreateTime>12345678</CreateTime>
+    <MsgType><![CDATA[text]]></MsgType>
+    <Content><![CDATA[你好]]></Content>
+    </xml>
+    """
+                trans_data = yield self.get_translate_en(content)
+                if trans_data != "":
+                    content = content+"\n"+trans_data
+                else:
+                    pass
+                resp_data = {
+                    "xml": {
+                        "ToUserName": dict_data["xml"]["FromUserName"],
+                        "FromUserName": dict_data["xml"]["ToUserName"],
+                        "CreateTime": int(time.time()),
+                        "MsgType": "text",
+                        "Content": content,
+                    }
+                }
+                self.write(xmltodict.unparse(resp_data))
         elif msg_type == "event":
             if dict_data["xml"]["Event"] == "subscribe":
                 """用户关注的事件"""
@@ -107,14 +171,15 @@ class WechatHandler(RequestHandler):
                         "FromUserName": dict_data["xml"]["ToUserName"],
                         "CreateTime": int(time.time()),
                         "MsgType": "text",
-                        "Content": u"您来啦，笑而不语",
+                        "Content": u"欢迎",
                     }
                 }
                 if "EventKey" in dict_data["xml"]:
                     event_key = dict_data["xml"]["EventKey"]
                     scene_id = event_key[8:]
-                    resp_data["xml"]["Content"] = u"您来啦，笑而不语%s次" % scene_id
+                    resp_data["xml"]["Content"] = u"欢迎您 %s次" % scene_id
                 self.write(xmltodict.unparse(resp_data))
+
             elif dict_data["xml"]["Event"] == "SCAN":
                scene_id = dict_data["xml"]["EventKey"]
                resp_data = {
@@ -128,6 +193,21 @@ class WechatHandler(RequestHandler):
                }
                self.write(xmltodict.unparse(resp_data))
 
+            # elif dict_data["xml"]["Event"] == "LOCATION":
+            #    Latitude = dict_data["xml"]["Latitude"]
+            #    Longitude = dict_data["xml"]["Longitude"]
+            #    Precision = dict_data["xml"]["Precision"]
+            #    resp_data = {
+            #        "xml": {
+            #            "ToUserName": dict_data["xml"]["FromUserName"],
+            #            "FromUserName": dict_data["xml"]["ToUserName"],
+            #            "CreateTime": int(time.time()),
+            #            "MsgType": "text",
+            #            "Content": u"您位置的经纬是%s %s,精度为%s" %(Longitude,Latitude,Precision),
+            #        }
+            #    }
+            #    self.write(xmltodict.unparse(resp_data))
+
         else:
             resp_data = {
                 "xml": {
@@ -135,7 +215,7 @@ class WechatHandler(RequestHandler):
                     "FromUserName": dict_data["xml"]["ToUserName"],
                     "CreateTime": int(time.time()),
                     "MsgType": "text",
-                    "Content": "I love itcast",
+                    "Content": u"你想干啥呀",
                 }
             }
             self.write(xmltodict.unparse(resp_data))
@@ -193,10 +273,11 @@ class ProfileHandler(RequestHandler):
             else:
                 self.render("index.html", user=user_data)
 
+
 """
 用户最终访问的URL
 https://open.weixin.qq.com/connect/oauth2/authorize?
-appid=wx36766f74dbfeef15&redirect_uri=http%3A//www.idehai.com/wechat8000/profile&response_type=code&scope=snsapi_userinfo
+appid=wxdd4d0a78d27aee58&redirect_uri=http%3A//www.sccnet.top.com/wechat8000/profile&response_type=code&scope=snsapi_userinfo
 &state=1#wechat_redirect
 """
 
@@ -209,13 +290,15 @@ class MenuHandler(RequestHandler):
         except Exception as e:
             self.write("errmsg: %s" % e)
         else:
+            print("access_token:",access_token)
             client = AsyncHTTPClient()
             url = "https://api.weixin.qq.com/cgi-bin/menu/create?access_token=%s" % access_token
             menu = {
                 "button": [
                     {
                         "type": "view",
-                        "name": "主页",
+                        "name": "王的主页",
+                        #"url":"http://www.soso.com/"
                         "url": "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxdd4d0a78d27aee58&redirect_uri=http%3A//www.sccnet.top/wechat8000/profile&response_type=code&scope=snsapi_userinfo&state=1&connect_redirect=1#wechat_redirect"
                     },
                     {
@@ -246,7 +329,6 @@ class MenuHandler(RequestHandler):
             )
             resp = yield client.fetch(req)
             dict_data = json.loads(resp.body)
-            print dict_date
 	    if dict_data["errcode"] == 0:
                 self.write("OK")
             else:
