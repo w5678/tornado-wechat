@@ -10,6 +10,9 @@ import time
 import tornado.gen
 import json
 import os
+import re
+
+from SqlHandler import SqlHandler
 
 from tornado.web import RequestHandler
 from tornado.options import options, define
@@ -58,6 +61,7 @@ class AccessToken(object):
 
 class WechatHandler(RequestHandler):
     """对接微信服务器"""
+    weather_list=[]
     def prepare(self):
         signature = self.get_argument("signature")
         timestamp = self.get_argument("timestamp")
@@ -72,6 +76,56 @@ class WechatHandler(RequestHandler):
     def get(self):
         echostr = self.get_argument("echostr")
         self.write(echostr)
+
+##"苏州天气" "无锡的天气"
+    def get_cityname(self,text_content):
+        print("get_cityname",text_content)
+        city_name=None
+        if(re.search(u"天气$",text_content)):
+            city_name=re.split(u"天气",text_content)
+            print("1",city_name)
+        elif(re.search(u"的天气$",text_content)):
+            city_name=re.split(u"的天气",text_content)
+            print("2",city_name)
+        else:
+            pass
+        print("city_name ret",city_name)
+        return city_name[0]
+
+    """
+    在这里获取到数据库里匹配的数据，异步查询
+    """
+    @tornado.gen.coroutine
+    def get_weather_from_name(self,city_name):
+        print("get weather",city_name)
+        ret_list=[]
+        sql = SqlHandler()
+        #sql.show_ver()
+        ret_datas=sql.get_cityCode(city_name)
+        print("MYSQL",ret_datas)
+        sql.close()
+        for city_name in ret_datas:
+            temp_list=[]
+        #异步查询
+            client = AsyncHTTPClient()
+            url = r"http://www.weather.com.cn/data/sk/%s.html"%city_name
+            print(url)
+            req = HTTPRequest(
+                url=url,
+                method="GET",
+                body=None,  # json.dumps(str, ensure_ascii=False)
+            )
+            resp = yield client.fetch(req)
+            ret_data = json.loads(resp.body)
+            print(ret_data)
+            print("temp",ret_data[u"weatherinfo"][u"temp"])
+            if ret_data[u"weatherinfo"][u"temp"]:
+                temp_list.append(ret_data[u"weatherinfo"][u"city"].encode("utf8"))
+                temp_list.append(ret_data[u"weatherinfo"][u"temp"])
+                ret_list.append(temp_list)
+            print("ret_list",ret_list)
+            WechatHandler.weather_list=ret_list
+            raise tornado.gen.Return(ret_list)
 
 # http://api.weixin.qq.com/cgi-bin/media/voice/translatecontent?access_token=ACCESS_TOKEN&lfrom=xxx&lto=xxx
     @tornado.gen.coroutine
@@ -101,7 +155,6 @@ class WechatHandler(RequestHandler):
                 pass
                 #self.write("failed")
             raise tornado.gen.Return(trans_ret)
-            #return trans_ret
 
     @tornado.gen.coroutine
     def post(self):
@@ -110,6 +163,14 @@ class WechatHandler(RequestHandler):
         msg_type = dict_data["xml"]["MsgType"]
         if msg_type == "text":
             content = dict_data["xml"]["Content"]
+            citys=self.get_cityname(content)
+            if citys:
+                citys_weather=self.get_weather_from_name(citys)
+                print(WechatHandler.weather_list)
+                for c in WechatHandler.weather_list:
+                    print("c=",c)
+                    content=content+'\n'+c[0]+"="+c[1]
+                print("post concent=",content)
             """
             <xml>
 <ToUserName><![CDATA[toUser]]></ToUserName>
@@ -119,12 +180,12 @@ class WechatHandler(RequestHandler):
 <Content><![CDATA[你好]]></Content>
 </xml>
 """
-            trans_data=yield self.get_translate_en(content)
-            print("text psot translate:",trans_data)
-            if trans_data!="":
-                content=trans_data
-            else:
-                pass
+            # trans_data=yield self.get_translate_en(content)
+            # print("text psot translate:",trans_data)
+            # if trans_data!="":
+            #     content=trans_data
+            # else:
+            #     pass
             resp_data = {
                 "xml":{
                     "ToUserName": dict_data["xml"]["FromUserName"],
@@ -298,28 +359,28 @@ class MenuHandler(RequestHandler):
                     {
                         "type": "view",
                         "name": "王的主页",
-                        #"url":"http://www.soso.com/"
-                        "url": "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxdd4d0a78d27aee58&redirect_uri=http%3A//www.sccnet.top/wechat8000/profile&response_type=code&scope=snsapi_userinfo&state=1&connect_redirect=1#wechat_redirect"
+                        "url":"http://www.soso.com/",
+                        #"url": "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxdd4d0a78d27aee58&redirect_uri=http%3A//www.sccnet.top/wechat8000/profile&response_type=code&scope=snsapi_userinfo&state=1&connect_redirect=1#wechat_redirect"
                     },
-                    {
-                        "name": "菜单",
-                        "sub_button": [
-                            {
-                                "type": "view",
-                                "name": "搜索",
-                                "url": "http://www.soso.com/"
-                            },
-                            {
-                                "type": "view",
-                                "name": "视频",
-                                "url": "http://v.qq.com/"
-                            },
-                            {
-                                "type": "click",
-                                "name": "赞一下我们",
-                                "key": "V1001_GOOD"
-                            }]
-                    }
+                    # {
+                    #     "name": "菜单",
+                    #     "sub_button": [
+                    #         {
+                    #             "type": "view",
+                    #             "name": "搜索",
+                    #             "url": "http://www.soso.com/"
+                    #         },
+                    #         {
+                    #             "type": "view",
+                    #             "name": "视频",
+                    #             "url": "http://v.qq.com/"
+                    #         },
+                    #         {
+                    #             "type": "click",
+                    #             "name": "赞一下我们",
+                    #             "key": "V1001_GOOD"
+                    #         }]
+                    # }
                 ]
             }
             req = HTTPRequest(
@@ -327,8 +388,11 @@ class MenuHandler(RequestHandler):
                 method="POST",
                 body=json.dumps(menu, ensure_ascii=False)
             )
+            print("menu url="+req.url)
+            print("menu body=" + req.body)
             resp = yield client.fetch(req)
             dict_data = json.loads(resp.body)
+            print(dict_data["errcode"])
 	    if dict_data["errcode"] == 0:
                 self.write("OK")
             else:
@@ -342,7 +406,7 @@ def main():
             (r"/wechat8000", WechatHandler),
             (r"/qrcode", QrcodeHandler),
             (r"/wechat8000/profile", ProfileHandler),
-            (r"/menu", MenuHandler),
+            (r"/wechat8000/menu", MenuHandler),
         ],
         template_path=os.path.join(os.path.dirname(__file__), "template")
     )
