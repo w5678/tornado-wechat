@@ -75,7 +75,6 @@ class GetCityWeather():
     def update_all(self):
         self.mysql.weather_count=self.mysql.read_mysql("select count(*) from weather")[0][0]
         start=1
-        self.mysql.weather_count=10
         # try:
         for i in range(start,self.mysql.weather_count):
             try:
